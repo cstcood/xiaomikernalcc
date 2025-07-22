@@ -1,90 +1,87 @@
- jobs:
-   build:
-     runs-on: ubuntu-latest
+name: Build Xiaomi Kernel
 
-     # —— 1. 新增输入开关 ——
-     inputs:
-       SOC:
-         type: choice
-         description: "请选择目标 SoC"
-         required: true
-         default: sm8250
-         options:
-           - sm8250
-           - sm8450
-           - sm8750
-       DEFCONFIG:
-         type: choice
-         description: "defconfig 文件名"
-         required: true
-         default: franken-mi11_defconfig
-         options:
-           - franken-mi11_defconfig
-           - franken-mi11-ultra_defconfig
-       KPM:
-         type: boolean
-         description: "是否启用 KPM？"
-         required: true
-         default: false
-       ZRAM:
-         type: boolean
-         description: "是否启用更多 ZRAM 算法（LZ4KD, ZSTDN）？"
-         required: true
-         default: false
+# —— 在顶层重新声明触发事件 ——
+on:
+  workflow_dispatch:
+    inputs:
+      SOC:
+        type: choice
+        description: "请选择目标 SoC"
+        required: true
+        default: sm8250
+        options:
+          - sm8250
+          - sm8450
+          - sm8750
+      DEFCONFIG:
+        type: choice
+        description: "defconfig 文件名"
+        required: true
+        default: franken-mi11_defconfig
+        options:
+          - franken-mi11_defconfig
+          - franken-mi11-ultra_defconfig
+      KPM:
+        type: boolean
+        description: "是否启用 KPM？"
+        required: true
+        default: false
+      ZRAM:
+        type: boolean
+        description: "是否启用更多 ZRAM 算法（LZ4KD, ZSTDN）？"
+        required: true
+        default: false
 
-     steps:
-       - name: Clone Xiaomi kernel source
-         run: |
-           git clone --depth=1 --single-branch \
-             -b corot-t-oss \
-             https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git kernel_workspace
+jobs:
+  build:
+    runs-on: ubuntu-latest
 
-+      - name: Prepare kernel config for KPM & ZRAM
-+        run: |
-+          cd kernel_workspace
-+          # 指定输出目录
-+          export O=out
-+          # 初始化 defconfig
-+          make ${{ github.event.inputs.DEFCONFIG }} O=$O
-+
-+          # 如果需要启用 KPM
-+          if [ "${{ github.event.inputs.KPM }}" = "true" ]; then
-+            scripts/config --file $O/.config \
-+              --enable CONFIG_KPM \
-+              --enable CONFIG_KPM_STATS \
-+              --enable CONFIG_KPM_DEBUG
-+          fi
-+
-+          # 如果需要启用更多 ZRAM 算法
-+          if [ "${{ github.event.inputs.ZRAM }}" = "true" ]; then
-+            scripts/config --file $O/.config \
-+              --enable CONFIG_ZRAM \
-+              --enable CONFIG_ZSMALLOC \
-+              --enable CONFIG_CRYPTO_LZ4KD \
-+              --enable CONFIG_CRYPTO_ZSTDN \
-+              --enable CONFIG_CRYPTO_LZ4HC \
-+              --enable CONFIG_CRYPTO_LZ4K
-+          fi
-+
-+          # 重新生成最终的 .config
-+          yes "" | make olddefconfig O=$O
+    steps:
+      - name: Clone Xiaomi kernel source
+        run: |
+          git clone --depth=1 --single-branch \
+            -b corot-t-oss \
+            https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git kernel_workspace
 
-       - name: Build Xiaomi kernel
-         run: |
-           cd kernel_workspace
-           export ARCH=arm64
-           export CROSS_COMPILE=aarch64-linux-gnu-
--          make O=out ${{ github.event.inputs.DEFCONFIG }}
--          make -j$(nproc) O=out
-+          make -j$(nproc) O=out
+      - name: Prepare kernel config for KPM & ZRAM
+        run: |
+          cd kernel_workspace
+          export O=out
+          make ${{ github.event.inputs.DEFCONFIG }} O=$O
 
-       - name: Package with AnyKernel3
-         run: |
-           git clone --depth=1 https://github.com/Numbersf/AnyKernel3
-           cp out/arch/arm64/boot/Image AnyKernel3/Image
+          if [ "${{ github.event.inputs.KPM }}" = "true" ]; then
+            scripts/config --file $O/.config \
+              --enable CONFIG_KPM \
+              --enable CONFIG_KPM_STATS \
+              --enable CONFIG_KPM_DEBUG
+          fi
 
-       - name: Upload AnyKernel3
-         uses: actions/upload-artifact@v4
-         with:
-           name: AnyKernel3_Mi_${{ github.event.inputs.SOC }}_${{ github.event.inputs.DEFCONFIG }}${{ github.event.inputs.KPM && '_KPM' || '' }}${{ github.event.inputs.ZRAM && '_ZRAM' || '' }}
-           path: AnyKernel3/*
+          if [ "${{ github.event.inputs.ZRAM }}" = "true" ]; then
+            scripts/config --file $O/.config \
+              --enable CONFIG_ZRAM \
+              --enable CONFIG_ZSMALLOC \
+              --enable CONFIG_CRYPTO_LZ4KD \
+              --enable CONFIG_CRYPTO_ZSTDN \
+              --enable CONFIG_CRYPTO_LZ4HC \
+              --enable CONFIG_CRYPTO_LZ4K
+          fi
+
+          yes "" | make olddefconfig O=$O
+
+      - name: Build Xiaomi kernel
+        run: |
+          cd kernel_workspace
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make -j$(nproc) O=out
+
+      - name: Package with AnyKernel3
+        run: |
+          git clone --depth=1 https://github.com/Numbersf/AnyKernel3
+          cp out/arch/arm64/boot/Image AnyKernel3/Image
+
+      - name: Upload AnyKernel3
+        uses: actions/upload-artifact@v4
+        with:
+          name: AnyKernel3_Mi_${{ github.event.inputs.SOC }}_${{ github.event.inputs.DEFCONFIG }}${{ github.event.inputs.KPM && '_KPM' || '' }}${{ github.event.inputs.ZRAM && '_ZRAM' || '' }}
+          path: AnyKernel3/*
